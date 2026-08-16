@@ -1,0 +1,872 @@
+
+########-------- Prepare the R Console ----------- ######################
+
+rm(list = ls(all = TRUE))  # Remove all objects in R console 
+
+### Install and Load Packages in R
+packages <- c(
+  "AER",
+  "olsrr",
+  "plm",
+  "car",
+  "broom",
+  "systemfit",
+  "ggplot2",
+  "reshape2",
+  "psych",
+  "dplyr",
+  "ggplot2",
+  "plotly",
+  "plot3D",
+  "RColorBrewer",
+)
+installed <- rownames(installed.packages())
+for (p in packages) {
+  if (!(p %in% installed)) {
+    install.packages(p, dependencies = TRUE)
+  }
+}
+library("AER")
+library("olsrr")
+library("plm")
+library("car")
+library("broom")
+library("lmtest")
+library("systemfit")
+library("ggplot2")
+library("reshape2")
+library("psych")
+library("dplyr")
+library("ggplot2")
+library("plotly")
+library("plot3D")
+library("RColorBrewer")
+
+data("Grunfeld", package = "AER")
+
+Grunfeld$firm <- as.factor(Grunfeld$firm)  # Ensure firm is a factor
+
+ggplot(Grunfeld, aes(x = firm, y = invest)) +
+  geom_boxplot(fill = "skyblue") +
+  labs(title = "Boxplot of Investment by Firm", x = "Firm", y = "Investment") +
+  theme_minimal()
+
+ggplot(Grunfeld, aes(x = firm, y = value)) +
+  geom_boxplot(fill = "lightgreen") +
+  labs(title = "Boxplot of Market Value by Firm", x = "Firm", y = "Value") +
+  theme_minimal()
+
+
+ggplot(Grunfeld, aes(x = firm, y = capital)) +
+  geom_boxplot(fill = "lightcoral") +
+  labs(title = "Boxplot of Capital by Firm", x = "Firm", y = "Capital") +
+  theme_minimal()
+
+
+ggplot(Grunfeld, aes(x = firm, y = invest)) +
+  geom_boxplot(fill = "skyblue") +
+  coord_flip() +
+  labs(title = "Boxplot of Investment by Firm", x = "Firm", y = "Investment") +
+  theme_minimal()
+
+## Panel models
+
+pg <- pdata.frame(subset(Grunfeld, firm != "American Steel"), c("firm", "year"))
+
+fm_fe <- plm(invest ~ value + capital, model = "within", data = pg)
+summary(fm_fe)
+coeftest(fm_fe, vcov = vcovHC)
+
+fm_reswar <- plm(invest ~ value + capital, data = pg,
+                 model = "random", random.method = "swar")
+summary(fm_reswar)
+
+boxplot(pg)
+
+## testing for random effects
+fm_ols <- plm(invest ~ value + capital, data = pg, model = "pooling")
+summary(fm_ols)
+
+shapiro.test(fm_ols$residuals)
+
+ols= lm(invest ~ value + capital, data = pg)
+windows()
+par(mfcol=c(2,2))
+plot(ols)
+
+summary(ols)$tukey_model 
+R2 <- rsq(ols)
+ols_plot_cooksd_bar(ols)
+predictedcp <- predict(fm_ols)
+# Actual values
+actual <- pg$invest
+# Calculate MAE
+MSECP <- mean((actual - predictedcp)^2)
+print(MSECP)
+
+preds <- predict(fm_ols)
+actual <- pg$invest
+rss <- sum((preds - actual) ^ 2)  ## residual sum of squares
+tss <- sum((actual - mean(actual)) ^ 2)  ## total sum of squares
+rsq <- 1 - rss/tss
+
+
+Swamy_model <- plm(invest ~ value + capital, data = pg, model = "random", method = "Swamy",effect = "twoways")
+summary(Swamy_model)
+
+predictedSwamy <- predict(Swamy_model)
+# Actual values
+actual <- pg$invest
+# Calculate MAE
+MSESwamy <- mean((actual - predictedSwamy)^2)
+print(MSESwamy)
+
+tukey_model <- rlm(invest ~ value + capital, data = pg,method = "M", psi = psi.bisquare)
+summary(tukey_model)
+
+predstukey <- predict(tukey_model)
+actual <- pg$invest
+rss <- sum((predstukey - actual) ^ 2)  ## residual sum of squares
+tss <- sum((actual - mean(actual)) ^ 2)  ## total sum of squares
+rsq <- 1 - rss/tss
+print(rsq)
+
+# Calculate MAE
+MSEtukey <- mean((actual - predstukey)^2)
+print(MSEtukey)
+
+plmtest(fm_ols, type = "bp")
+plmtest(fm_ols, type = "honda")
+
+OLS= lm(invest ~ value + capital, data = Grunfeld)
+summary(OLS)
+vif(OLS)
+
+## Random effects models
+fm_ream <- plm(invest ~ value + capital, data = pg, model = "random",
+               random.method = "amemiya")
+fm_rewh <- plm(invest ~ value + capital, data = pg, model = "random",
+               random.method = "walhus")
+fm_rener <- plm(invest ~ value + capital, data = pg, model = "random",
+                random.method = "nerlove")
+
+summary(fm_rener)
+
+
+## Baltagi (2005), Tab. 2.1
+rbind(
+  "OLS(pooled)" = coef(fm_ols),
+  "FE" = c(NA, coef(fm_fe)),
+  "RE-SwAr" = coef(fm_reswar),
+  "RE-Amemiya" = coef(fm_ream),
+  "RE-WalHus" = coef(fm_rewh),
+  "RE-Nerlove" = coef(fm_rener))
+
+
+## preliminaries
+source("start.R")
+
+## data pre-processing
+gr8 <- subset(Grunfeld, firm %in% c("General Motors", "General Electric", "US Steel",
+                                    "Atlantic Refining", "Union Oil", "Diamond Match", "Goodyear", "American Steel"))
+gr8$firm <- factor(gr8$firm)
+pgr8 <- plm.data(gr8, c("firm", "year"))
+
+gr3 <- subset(Grunfeld, firm %in% c("IBM", "Chrysler", "Westinghouse"))
+gr3$firm <- factor(gr3$firm)
+pgr3 <- plm.data(gr3, c("firm", "year"))
+
+
+# Table 25, p. 132 (constant terms not given)
+lm_GM <- lm(invest ~ value + capital, data = gr8, subset = firm == "General Motors")
+lm_GE <- lm(invest ~ value + capital, data = gr8, subset = firm == "General Electric")
+lm_US <- lm(invest ~ value + capital, data = gr8, subset = firm == "US Steel")
+lm_AR <- lm(invest ~ value + capital, data = gr8, subset = firm == "Atlantic Refining")
+lm_UO <- lm(invest ~ value + capital, data = gr8, subset = firm == "Union Oil")
+lm_DM <- lm(invest ~ value + capital, data = gr8, subset = firm == "Diamond Match")
+lm_GY <- lm(invest ~ value + capital, data = gr8, subset = firm == "Goodyear")
+lm_AS <- lm(invest ~ value + capital, data = gr8, subset = firm == "American Steel")
+
+gsummary(lm_GM)
+gsummary(lm_GE)
+gsummary(lm_US)
+gsummary(lm_AR)
+gsummary(lm_UO)
+gsummary(lm_DM)
+gsummary(lm_GY)
+gsummary(lm_AS)
+
+## alternatively
+sf8 <- systemfit(invest ~ value + capital, method = "OLS", data = pgr8)
+gsummary(sf8)
+
+## Macro regression (Table 25, col. "Aggr.")
+gr8_macro <- aggregate(gr8[,-4], list(gr8$year), sum)[,-1]
+lm_macro <- lm(invest ~ value + capital, data = gr8_macro)
+gsummary(lm_macro)
+
+
+## Table 30, p. 148 (constant terms not given)
+## R^2s in Table 29, p. 146
+lm_IBM <- lm(invest ~ value + capital, data = gr3, subset = firm == "IBM")
+lm_CH <- lm(invest ~ value + capital, data = gr3, subset = firm == "Chrysler")
+lm_WH <- lm(invest ~ value + capital, data = gr3, subset = firm == "Westinghouse")
+
+gsummary(lm_IBM)
+gsummary(lm_CH)
+gsummary(lm_WH)
+
+## alternatively
+sf3 <- systemfit(invest ~ value + capital, method = "OLS", data = pgr3)
+gsummary(sf3)
+
+
+## aggregate regression using Grunfeld's Table 10 (Appendix), p. 164
+## very different from gsummary(lm_macro)
+lm_agg <- lm(invest ~ value + capital, data = Grunfeld_agg)
+gsummary(lm_agg)
+
+#####################################
+
+# View structure
+head(Grunfeld)
+
+# Fit a linear model (pooled OLS)
+model <- lm(invest ~ value + capital, data = Grunfeld)
+
+# Summary of model
+summary(model)
+
+# Extract predictor variables (exclude response and factors)
+X <- model.matrix(model)[, -1]  # Remove intercept
+
+# Compute means and covariance matrix
+X_centered <- scale(X, center = TRUE, scale = FALSE)
+means <- colMeans(X)
+S <- cov(X)
+
+# Compute Mahalanobis distances
+grunfeld_md <- mahalanobis(X, center = means, cov = S)
+
+# Add to data
+Grunfeld$md <- grunfeld_md
+
+n <- nrow(Grunfeld)
+p <- 2  # number of predictors
+threshold <- qchisq(0.975, df = p)  # 97.5% quantile of chi-square
+
+# Create a data frame for plotting
+plot_data <- data.frame(
+  obs = 1:n,
+  md = grunfeld_md,
+  company = Grunfeld$firm,
+  year = Grunfeld$year
+)
+
+# Identify outliers
+plot_data$outlier <- plot_data$md > threshold
+
+# Plot using ggplot2
+ggplot(plot_data, aes(x = obs, y = md, color = outlier)) +
+  geom_point(size = 2) +
+  geom_hline(yintercept = threshold, linetype = "dashed", color = "red", size = 1) +
+  labs(
+    title = "Mahalanobis Distance",
+    x = "Observation Index",
+    y = "Mahalanobis Distance",
+    color = "Outlier"
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = c("FALSE" = "blue", "TRUE" = "red")) +
+  annotate("text", x = 1, y = threshold * 1.1, 
+           label = paste("Threshold =", round(threshold, 2)), color = "red")
+
+top_outliers <- plot_data[plot_data$md > threshold, ]
+print("Observations flagged as multivariate outliers:")
+print(top_outliers[, c("obs", "company", "year", "md")])
+
+
+
+dfb <- dfbetas(model)  # Returns matrix with DFBETAS for each coefficient
+dfb_df <- data.frame(
+  obs = 1:nrow(Grunfeld),
+  firm = Grunfeld$firm,
+  year = Grunfeld$year,
+  Intercept = dfb[, "(Intercept)"],
+  value = dfb[, "value"],
+  capital = dfb[, "capital"]
+)
+
+n <- nrow(Grunfeld)
+threshold <- 2 / sqrt(n)
+cat("DFBETAS threshold (2/sqrt(n)):", round(threshold, 3), "\n")
+
+dfb_long <- melt(dfb_df, id.vars = c("obs", "firm", "year"),
+                 variable.name = "coefficient",
+                 value.name = "dfbetas")
+
+ggplot(dfb_long, aes(x = obs, y = dfbetas)) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "gray50") +
+  geom_hline(yintercept = threshold, linetype = "dashed", color = "red", size = 0.8) +
+  geom_hline(yintercept = -threshold, linetype = "dashed", color = "red", size = 0.8) +
+  geom_point(aes(color = abs(dfbetas) > threshold), size = 1.5) +
+  facet_wrap(~ coefficient, scales = "free_y") +
+  labs(
+    title = "DFBETAS Plot for Grunfeld Data",
+    subtitle = "Threshold: ±2/√n ≈ ±0.141",
+    x = "Observation Index",
+    y = "DFBETAS",
+    color = "Influential"
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = c("FALSE" = "black", "TRUE" = "red")) +
+  theme(
+    strip.text = element_text(face = "bold", size = 10),
+    legend.position = "top"
+  )
+
+influential <- dfb_long[abs(dfbetas) > threshold, ]
+print("Highly influential observations (DFBETAS > threshold):")
+head(influential[order(influential$coefficient, -abs(influential$dfbetas)), ])
+
+### COVRATIO
+
+# Get leave-one-out fits
+influence_stats <- influence(model)
+
+# Number of parameters (including intercept)
+p <- length(coef(model))  # p = 3
+n <- nrow(Grunfeld)
+
+# Hat values (leverage)
+h_ii <- influence_stats$hat
+
+# Residuals
+residuals_std <- residuals(model)
+sigma_sq <- sum(residuals(model)^2) / (n - p)  # MSE
+
+# Leave-one-out residual variance
+sigma_i_sq <- rep(NA, n)
+for (i in 1:n) {
+  model_i <- lm(update(formula(model), data = Grunfeld[-i, ]))
+  sigma_i_sq[i] <- sum(residuals(model_i)^2) / (n - p - 1)
+}
+
+# Alternatively, use approximation from hat values and residuals
+# More efficient: Use analytical formula for COVRATIO
+covratio <- ( ( (n - p - residuals(model)^2 / (1 - h_ii)^2 * (1/(n - p)) ) / (n - p) )^(-p/2) ) * 
+  ((1 - h_ii)^2)
+
+# But better: Use standard formula:
+# COVRATIO_i = [det(Σ_{-i}) / det(Σ)] 
+# Approximated by: COVRATIO_i = [(n-p-1 + r_i^2/(1-h_ii)^2)/(n-p)]^p * (1 - h_ii)^2 / (1 - h_ii)^2 → simplified
+
+# Standard formula used in textbooks:
+covratio <- (( (summary(model)$sigma^2 * (n - p) - residuals(model)^2 / (1 - h_ii)^2 ) / (n - p - 1) ) / 
+               summary(model)$sigma^2)^p * (1 - h_ii)^p
+
+# Actually, most sources use this simplified approximation:
+covratio <- ( ( (n - p - 1) / ( (n - p - (residuals(model)/(1 - h_ii))^2 / summary(model)$sigma^2 ) ) )^(p/2) ) * (1 - h_ii)^p
+
+# Let's use the **most accepted and simple formula**:
+# COVRATIO_i = [ (MSE_{-i}) / MSE ]^p * (1 - h_ii)^p
+# But we can get it via `influence.measures()` which provides it directly!
+
+inf <- influence.measures(model)
+
+# COVRATIO is part of inf$infmat
+# Column name: "covratio"
+df <- data.frame(
+  obs = 1:n,
+  firm = Grunfeld$firm,
+  year = Grunfeld$year,
+  covratio = inf$infmat[, "covratio"]
+)
+
+threshold_low <- 1 - (3 * p / n)
+threshold_high <- 1 + (3 * p / n)
+
+cat("COVRATIO thresholds:\n")
+cat("Lower: ", round(threshold_low, 3), "\n")
+cat("Upper: ", round(threshold_high, 3), "\n")
+# For Grunfeld: n=200, p=3 → thresholds: 1 ± 9/200 → [0.955, 1.045]
+
+# Add flag for influential points
+df$outlier <- df$covratio < threshold_low | df$covratio > threshold_high
+
+# Plot
+ggplot(df, aes(x = obs, y = covratio, color = outlier)) +
+  geom_point(size = 1.8) +
+  geom_hline(yintercept = 1, linetype = "solid", color = "gray60", size = 0.8) +
+  geom_hline(yintercept = threshold_low, linetype = "dashed", color = "red", size = 0.8) +
+  geom_hline(yintercept = threshold_high, linetype = "dashed", color = "red", size = 0.8) +
+  labs(
+    title = "COVRATIO Plot for Grunfeld Data",
+    subtitle = "Thresholds: 1 ± 3p/n (p=3, n=200) → [0.955, 1.045]",
+    x = "Observation Index",
+    y = "COVRATIO",
+    color = "Influential"
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = c("FALSE" = "black", "TRUE" = "red")) +
+  annotate("text", x = 10, y = threshold_high + 0.01, 
+           label = paste("Upper:", round(threshold_high, 3)), color = "red", size = 3.5) +
+  annotate("text", x = 10, y = threshold_low - 0.01, 
+           label = paste("Lower:", round(threshold_low, 3)), color = "red", size = 3.5)
+
+influential <- df[df$outlier, ]
+print("Observations with high influence on covariance matrix (COVRATIO outside bounds):")
+print(influential[, c("obs", "firm", "year", "covratio")])
+
+table(influential$firm)
+
+
+# Extract fitted values and residuals
+fitted <- fitted(model)
+residuals_internal <- residuals(model)
+n <- nobs(model)        # number of observations
+p <- length(coef(model)) # number of parameters
+
+# Hat values (leverages)
+leverage <- hatvalues(model)
+
+# Plot leverage
+plot(leverage, type = "h", main = "Leverage Values (hii)")
+abline(h = 2*p/n, col = "red", lty = 2)  # Threshold: 2p/n
+
+
+# Internally studentized residuals
+Studentized <- rstandard(model)
+
+# Plot
+plot(Studentized, main = "Studentized Residuals")
+abline(h = c(-2, 2), col = "blue", lty = 2)
+
+# Externally studentized residuals
+Externally_Studentized <- rstudent(model)
+
+# Plot
+plot(Externally_Studentized, main = "Externally Studentized Residuals")
+abline(h = c(-2, 2), col = "blue", lty = 2)
+
+threshold_t <- qt(0.975, df = n - p - 1)
+outliers_t <- which(abs(Externally_Studentized) > threshold_t)
+cat("Observations with large studentized residuals:\n")
+print(Grunfeld[outliers_t, ])
+
+# Mahalanobis distance for predictors
+X <- model.matrix(model)[, -1]  # exclude intercept
+mahal_dist <- mahalanobis(X, colMeans(X), cov(X))
+
+# Chi-square threshold
+threshold_mahal <- qchisq(0.975, df = p - 1)
+
+# Identify outliers
+outliers_mahal <- which(mahal_dist > threshold_mahal)
+
+
+# Cook's distance
+cook_dist <- cooks.distance(model)
+
+# Plot
+plot(cook_dist, type = "h", main = "Cook's Distance")
+abline(h = 4/n, col = "red", lty = 2)  # Threshold: 4/n
+
+# DFFITS
+dffits_val <- dffits(model)
+
+# Threshold: 2 * sqrt(p/n)
+threshold_dffits <- 2 * sqrt(p / n)
+
+# Identify influential
+outliers_dffits <- which(abs(dffits_val) > threshold_dffits)
+
+
+# DFBETAS for each coefficient
+DFFITS <- dfbetas(model)
+
+# Threshold: 2 / sqrt(n)
+threshold_dfbetas <- 2 / sqrt(n)
+
+# Example: Check for 'value' coefficient (second column)
+plot(DFFITS [, "value"], type = "h", main = "DFFITS Plot")
+abline(h = c(-threshold_dfbetas, threshold_dfbetas), col = "red", lty = 2)
+
+
+# Atkinson's measure: A_i = (p * D_i) / (1 - D_i) * (n - p)
+atkinson <- (p * cook_dist) / (1 - cook_dist) * (n - p) / p
+atkinson <- sqrt(atkinson)  # sometimes reported as sqrt
+
+# Threshold: qf(0.975, p, n-p)
+threshold_atkinson <- qf(0.975, p, n - p)
+
+# Plot
+plot(atkinson, type = "h", main = "COVRATIO Plot")
+abline(h = threshold_atkinson, col = "red", lty = 2)
+
+boxplot(model$residuals,col = "red", main = "BoxPlot of Residuals")
+
+# COVRATIO
+COVRATIO <- covratio(model)
+
+# Threshold: 1 ± 3*(p/n)
+upper <- 1 + 3*(p/n)
+lower <- 1 - 3*(p/n)
+
+# Identify problematic
+outliers_covratio <- which(covratio < lower | covratio > upper)
+
+plot(COVRATIO)
+abline(h = outliers_covratio, col = "red", lty = 4, main = "Cook's Distance")
+abline(h = c(-2, 2), col = "blue", lty = 2)
+
+
+plot(covratio, type = "h", main = "Cook's Distance")
+abline(h = c(1, 60), col = "red", lty = 2)
+
+
+# Create a diagnostic dataframe
+diagnostics <- data.frame(
+  obs = 1:n,
+  leverage = leverage,
+  Studentized = Studentized,
+  Externally_Studentized = Externally_Studentized,
+  cook_dist = cook_dist,
+  dffits = dffits_val,
+  covratio = covratio,
+  outlier_leverage = leverage > 2*p/n,
+  outlier_stud_ext = abs(Externally_Studentized) > qt(0.975, df = n - p - 1),
+  outlier_cook = cook_dist > 4/n,
+  outlier_dffits = abs(dffits_val) > 2*sqrt(p/n),
+  outlier_covratio = covratio < (1 - 3*p/n) | covratio > (1 + 3*p/n)
+)
+
+# Show top influential observations
+influential <- diagnostics[
+  diagnostics$outlier_leverage |
+    diagnostics$outlier_stud_ext |
+    diagnostics$outlier_cook |
+    diagnostics$outlier_dffits |
+    diagnostics$outlier_covratio, ]
+
+print(head(influential[order(-cook_dist[influential$obs]), ], 25))
+
+# Built-in diagnostic plots
+plot(model)
+
+####################################
+
+# Fit linear model: Pooled OLS
+model <- lm(inv ~ value + capital, data = Grunfeld)
+
+# Extract model info
+n <- nobs(model)        # 200 observations
+p <- length(coef(model)) # 3 (intercept, value, capital)
+
+# Compute all diagnostics
+diagnostics <- tibble(
+  obs = 1:n,
+  firm = Grunfeld$firm,
+  year = Grunfeld$year,
+  invest = Grunfeld$invest,
+  value = Grunfeld$value,
+  capital = Grunfeld$capital,
+  
+  # 1. Leverage (hat values)
+  leverage = hatvalues(model),
+  
+  # 2. Internally Studentized Residuals
+  stud_res = rstandard(model),
+  
+  # 3. Externally Studentized Residuals
+  stud_res_ext = rstudent(model),
+  
+  # 4. Mahalanobis Distance (in X-space, excluding intercept)
+  X = model.matrix(model)[, -1],  # predictors only
+  mahal_dist = mahalanobis(X, colMeans(X), cov(X)),
+  
+  # 5. Cook's Distance
+  cook_dist = cooks.distance(model),
+  
+  # 6. DFFITS
+  dffits = dffits(model),
+  
+  # 7. DFBETAS (for each coefficient; we'll focus on intercept, value, capital)
+  dfbetas_int = dfbetas(model)[, "(Intercept)"],
+  dfbetas_value = dfbetas(model)[, "value"],
+  dfbetas_capital = dfbetas(model)[, "capital"],
+  
+  # 8. Atkinson’s Measure (scaled Cook’s distance)
+  # Recompute Atkinson's measure safely
+  
+  # First, inspect Cook's distances near or above 1
+  cook_dist <- cooks.distance(model)
+  
+  # Find any Cook's distance >= 1
+  if (any(cook_dist >= 1, na.rm = TRUE)) {
+    cat("Warning: The following observations have Cook's distance >= 1:\n")
+    print(which(cook_dist >= 1))
+    print(data.frame(obs = which(cook_dist >= 1),
+                     cook_dist = cook_dist[cook_dist >= 1],
+                     firm = Grunfeld$firm[cook_dist >= 1],
+                     year = Grunfeld$year[cook_dist >= 1]))
+  }
+  
+  # Safe computation of Atkinson’s measure
+  atkinson_safe <- ifelse(cook_dist >= 1, 
+                          Inf,  # undefined or infinite influence
+                          sqrt(p * cook_dist / (1 - cook_dist) * (n - p) / p)
+  )
+  # 9. COVRATIO
+  covratio = covratio(model)
+) %>%
+  select(-X)  # remove temporary X column
+
+# Thresholds
+thresh_leverage   <- 2 * p / n
+thresh_stud_ext   <- qt(0.975, df = n - p - 1)  # ~1.97
+thresh_cook       <- 4 / n
+thresh_dffits     <- 2 * sqrt(p / n)
+thresh_dfbetas    <- 2 / sqrt(n)
+thresh_mahal      <- qchisq(0.975, df = p - 1)  # p-1 = 2
+thresh_atkinson   <- qf(0.975, p, n - p)        # for comparison
+thresh_covratio_low  <- 1 - 3 * p / n
+thresh_covratio_high <- 1 + 3 * p / n
+
+# Add outlier flags
+diagnostics <- diagnostics %>%
+  mutate(
+    outlier_leverage   = leverage > thresh_leverage,
+    outlier_stud_ext   = abs(stud_res_ext) > thresh_stud_ext,
+    outlier_cook       = cook_dist > thresh_cook,
+    outlier_dffits     = abs(dffits) > thresh_dffits,
+    outlier_dfbetas    = (abs(dfbetas_int) > thresh_dfbetas |
+                            abs(dfbetas_value) > thresh_dfbetas |
+                            abs(dfbetas_capital) > thresh_dfbetas),
+    outlier_mahal      = mahal_dist > thresh_mahal,
+    outlier_atkinson   = atkinson > thresh_atkinson,
+    outlier_covratio   = covratio < thresh_covratio_low | covratio > thresh_covratio_high,
+    
+    # Count how many methods flag this obs
+    total_flags = rowSums(select(., 
+                                 outlier_leverage, outlier_stud_ext, outlier_cook, 
+                                 outlier_dffits, outlier_dfbetas, 
+                                 outlier_mahal, outlier_atkinson, outlier_covratio
+    ))
+  )
+
+
+# Select only columns of interest for final comparison
+comparison_table <- diagnostics %>%
+  select(
+    obs, firm, year, invest, value, capital,
+    leverage, stud_res_ext, mahal_dist, cook_dist, 
+    dffits, dfbetas_value, atkinson, covratio,
+    outlier_leverage, outlier_stud_ext, outlier_mahal,
+    outlier_cook, outlier_dffits, outlier_dfbetas,
+    outlier_atkinson, outlier_covratio, total_flags
+  ) %>%
+  filter(total_flags > 0) %>%  # Only show observations flagged by at least one method
+  arrange(desc(total_flags), -cook_dist) %>%
+  round(4)
+
+# Print
+print(comparison_table)
+
+# Count how many outliers per method
+outlier_counts <- comparison_table %>%
+  summarise(
+    n_leverage   = sum(outlier_leverage),
+    n_stud_ext   = sum(outlier_stud_ext),
+    n_mahal      = sum(outlier_mahal),
+    n_cook       = sum(outlier_cook),
+    n_dffits     = sum(outlier_dffits),
+    n_dfbetas    = sum(outlier_dfbetas),
+    n_atkinson   = sum(outlier_atkinson),
+    n_covratio   = sum(outlier_covratio)
+  )
+
+print(outlier_counts)
+
+
+# Flag matrix
+flags <- comparison_table %>%
+  select(obs, firm, year, starts_with("outlier_")) %>%
+  column_to_rownames("obs")
+
+# Convert to binary
+flags_binary <- as.matrix(flags != FALSE)
+
+# Plot
+heatmap(flags_binary, Colv = NA, cexRow = 0.6, cexCol = 0.7,
+        main = "Outlier Flags by Detection Method",
+        xlab = "Method", ylab = "Observation (ID)")
+
+# Check the structure
+str(Grunfeld)
+
+# Convert firm and year to factors if needed
+Grunfeld$firm <- as.factor(Grunfeld$firm)
+
+# Investment over time by firm
+ggplot(Grunfeld, aes(x = year, y = invest, color = firm)) +
+  geom_line() +
+  labs(title = "Investment Over Year by Firm", y = "Investment") +
+  theme_minimal()
+
+# Value over time by firm
+ggplot(Grunfeld, aes(x = year, y = value, color = firm)) +
+  geom_line() +
+  labs(title = "Market Value Over Year by Firm", y = "Value") +
+  theme_minimal()
+
+# Capital stock over time by firm
+ggplot(Grunfeld, aes(x = year, y = capital, color = firm)) +
+  geom_line() +
+  labs(title = "Capital Stock Over Year by Firm", y = "Capital") +
+  theme_minimal()
+
+# Facet investment by firm
+ggplot(Grunfeld, aes(x = year, y = invest)) +
+  geom_line() +
+  facet_wrap(~ firm, scales = "free_y") +
+  labs(title = "Investment Over Year (Faceted by Firm)", y = "Investment") +
+  theme_minimal()
+
+
+library(psych)
+describeBy(Grunfeld[, c("invest", "value", "capital")], group = Grunfeld$firm)
+
+##################
+
+Grunfeld %>%
+  group_by(firm) %>%
+  summarise(
+    mean_inv = mean(invest),
+    sd_inv = sd(invest),
+    min_inv = min(invest),
+    max_inv = max(invest),
+    mean_value = mean(value),
+    sd_value = sd(value),
+    min_value = min(value),
+    max_value = max(value),
+    mean_capital = mean(capital),
+    sd_capital = sd(capital),
+    min_capital = min(capital),
+    max_capital = max(capital)
+  )
+
+
+describeBy(Grunfeld[, c("invest", "value", "capital")], group = Grunfeld$firm)
+
+
+# Basic correlation matrix for the whole dataset
+cor(Grunfeld[, c("invest", "value", "capital")])
+
+
+# List to store results
+cor_by_firm <- lapply(split(Grunfeld, Grunfeld$firm), function(df) {
+  cor(df[, c("invest", "value", "capital")])
+})
+
+# View correlation matrix for firm 1
+cor_by_firm[["1"]]
+print(cor_by_firm)
+
+summary(Grunfeld)
+
+####### Figures
+## Change this to your actual dataset location
+data_Relative <- read.csv(
+  "Relative Efficiency_Dataset.csv",
+  header = TRUE
+)
+
+## Define the exact order you want for the legend and lines
+est_order <- c("M-Huber", "M-Hampel", "M-Andrew", "M-Bisquare", "S", "MM")
+
+## Example data (replace with your actual values)
+data <- data.frame(
+  CrossSectionSize = rep(c(10, 15, 20, 30), times = 7),
+  RelativeEfficiency = data_Relative, 
+##Convert to factor and specify the levels to enforce the order
+  Estimators = factor(rep(est_order, each = 4), levels = est_order)
+)
+
+# Set colors to match the image
+est_colors <- c(
+  "M-Huber"    = "purple",
+  "M-Hampel"   = "darkgreen",
+  "M-Andrew"   = "blue",
+  "M-Bisquare" = "cyan",
+  "S"          = "black",
+  "MM"         = "red"
+)
+
+# Plot
+ggplot(data, aes(x = CrossSectionSize, y = RelativeEfficiency,
+                 color = Estimators, group = Estimators)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(values = est_colors) +
+  labs(
+    x = "Cross-Section Size",
+    y = expression("Relative Efficiency"),
+    title = expression(phi[k]^2 == 0 ~ "and" ~ tau == "10%")
+  ) +
+  theme_minimal() +
+  theme(
+    legend.title = element_text(size = 11),
+    legend.text = element_text(size = 10),
+    plot.title = element_text(hjust = 0.6, size = 14)  # center the title
+  )
+
+rm(list = ls(all = TRUE)) # Remove all objects in R console 
+
+# Change this to your actual dataset location
+ATSE_data <- read.csv(
+  "ATSE_Dataset.csv",
+  header = TRUE
+)
+
+Final.table = array(NA,c(12,9))
+rownames(Final.table)= rep(c("n=5","n=10","n=20","n=30"),3)
+colnames(Final.table)=c(("MG"),("RCR"),("M-Huber"),("M-Hampel"),("M-Andrew"),("M-Bisquare"),("S"),("MM"))
+Final.table[,1]= c(CP)
+Final.table[,2]= c(MG)
+Final.table[,3]= c(RCR)
+Final.table[,4]= c(M-Huber)
+Final.table[,5]= c(M-Hampel)
+Final.table[,6]= c(M-Andrew)
+Final.table[,7]= c(M-Bisquare)
+Final.table[,8]= c(S)
+Final.table[,9]= c(MM)
+
+data = Final.table
+library(lattice)
+n=c(5,10,20,30)
+Robust.estimaors = c(rep("CP",9),rep("MG",9), rep("RCR",9),rep("M-Huber",9),rep("M-Hampel",9),rep("M-Andrew",9),rep("M-Bisquare",9),
+                     rep("S",9),rep("MM",9))
+
+tao_x.values = rep(c(0.10,0.20,0.30),4)
+gg = expand.grid(n=n,tao_x=tao_x.values)
+my.data.es = data.frame(gg,Robust.estimaors,ATMSE.values= c(data))
+
+##==========
+windows(50,50)
+wireframe(ATMSE.values ~n*tao_x|Robust.estimaors,data =my.data.es,
+          scales=list(arrows=FALSE,cex=0.5,distance=0.9,col=1),
+          screen=list(z= 40,x=-50),
+          outer=TRUE,
+          colorkey = TRUE,
+          col.regions = rainbow(100, s = 1, v = 1, start = 0, end = max(1,100 - 1)/100, alpha = .9),
+          #col.regions=heat.colors(100),
+          col=rgb(1,5,10,max=100),
+          zoom=.88,
+          panel.aspect=1,
+          drape=TRUE,
+          main="",
+          xlab="n",
+          ylab="t%",
+          zlab="ATSE")
+########################################################
